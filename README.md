@@ -1,7 +1,5 @@
 # DocuMind AI
 
-![DocuMind AI Banner](https://via.placeholder.com/1200x400/4161a8/ffffff?text=DocuMind+AI+-+Intelligent+Document+Assistant)
-
 DocuMind AI is a state-of-the-art **Retrieval-Augmented Generation (RAG)** document intelligence assistant. It empowers users to securely upload documents, organize them into collections, and interact with them using natural language queries.
 
 By orchestrating document processing, semantic search via embeddings, Vector Databases, and Large Language Models (LLMs), DocuMind AI generates highly accurate answers grounded entirely in user-provided context—complete with precise source citations.
