@@ -1,6 +1,7 @@
 import logging
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from .models import Document, DocumentChunk
+from ai_engine.embeddings import EmbeddingService
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,21 @@ class ChunkingService:
             )
 
         # Bulk create chunks for efficiency
-        DocumentChunk.objects.bulk_create(document_chunks)
+        created_chunks = DocumentChunk.objects.bulk_create(document_chunks)
         
-        logger.info(f"Created {len(document_chunks)} chunks for document {document.id}")
+        logger.info(f"Created {len(document_chunks)} chunks for document {document.id}. Starting embedding process...")
+
+        # Store in Vector DB
+        try:
+            embedding_service = EmbeddingService()
+            # Fetch the chunks back to have primary keys assigned (bulk_create might not set PKs in some DBs)
+            saved_chunks = DocumentChunk.objects.filter(document=document)
+            success = embedding_service.embed_and_store_chunks(saved_chunks)
+            if success:
+                logger.info(f"Successfully embedded and stored {len(saved_chunks)} chunks in ChromaDB.")
+            else:
+                logger.error("Failed to store embeddings in ChromaDB.")
+        except Exception as e:
+            logger.error(f"Embedding pipeline failed: {e}", exc_info=True)
+
         return True

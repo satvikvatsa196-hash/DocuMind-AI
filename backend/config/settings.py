@@ -145,3 +145,7 @@ REST_FRAMEWORK = {
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
 }
+
+# ChromaDB Settings
+CHROMA_DB_URL = os.environ.get("CHROMA_DB_URL", "http://localhost:8001")
+CHROMA_DB_COLLECTION = os.environ.get("CHROMA_DB_COLLECTION", "documind_collection")
