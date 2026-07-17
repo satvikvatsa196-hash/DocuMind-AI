@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from ai_engine.retriever import RetrieverService
 from ai_engine.llm import LLMService
 from .models import ChatSession, ChatMessage
+from documents.models import Document, DocumentCollection
 from .serializers import ChatSessionSerializer, ChatMessageSerializer
 from django.shortcuts import get_object_or_404
 
@@ -32,6 +33,7 @@ class QueryView(APIView):
     def post(self, request, *args, **kwargs):
         query = request.data.get("query")
         session_id = request.data.get("session_id")
+        collection_id = request.data.get("collection_id")
         document_ids = request.data.get("document_ids", None)
         
         if not query:
@@ -41,6 +43,9 @@ class QueryView(APIView):
         chat_history = []
         if session_id:
             session = get_object_or_404(ChatSession, id=session_id, user=request.user)
+            if session.collection:
+                collection_id = session.collection.id
+                
             # Limit history to last 10 messages (5 turns)
             recent_messages = ChatMessage.objects.filter(session=session).order_by('-timestamp')[:10]
             for msg in reversed(recent_messages):
@@ -52,8 +57,29 @@ class QueryView(APIView):
             # Save user query to db
             ChatMessage.objects.create(session=session, role='USER', message=query)
             
-        # 1. Retrieve Context
-        context_chunks = RetrieverService.retrieve_context(query, document_ids=document_ids, top_k=5)
+        # Security: Enforce tenant isolation
+        allowed_docs = Document.objects.filter(uploaded_by=request.user)
+        
+        if collection_id:
+            collection = get_object_or_404(DocumentCollection, id=collection_id, owner=request.user)
+            allowed_docs = allowed_docs.filter(collection=collection)
+            
+        if document_ids:
+            allowed_docs = allowed_docs.filter(id__in=document_ids)
+            
+        user_document_ids = list(allowed_docs.values_list('id', flat=True))
+        
+        if not user_document_ids:
+            response_data = {
+                "answer": "You have no documents available to search in this context.", 
+                "citations": []
+            }
+            if session:
+                ChatMessage.objects.create(session=session, role='AI', message=response_data["answer"])
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        # 1. Retrieve Context securely bounded to user_document_ids
+        context_chunks = RetrieverService.retrieve_context(query, document_ids=user_document_ids, top_k=5)
         
         # 2. Call LLM
         llm_service = LLMService()

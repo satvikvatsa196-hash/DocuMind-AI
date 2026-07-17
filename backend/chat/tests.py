@@ -6,6 +6,7 @@ from rest_framework.test import APIClient
 from rest_framework import status
 from django.contrib.auth import get_user_model
 from .models import ChatSession, ChatMessage
+from documents.models import Document, DocumentCollection
 
 User = get_user_model()
 
@@ -102,4 +103,67 @@ class ChatQueryTests(TestCase):
         self.assertEqual(len(response.data['results']), 2)
         self.assertEqual(response.data['results'][0]['message'], 'Msg 1')
         self.assertEqual(response.data['results'][1]['message'], 'Msg 2')
+
+class ChatSecurityTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user1 = User.objects.create_user(username='user1', password='testpassword123')
+        self.user2 = User.objects.create_user(username='user2', password='testpassword123')
+        
+        # User 1 has a document in a collection
+        self.col1 = DocumentCollection.objects.create(owner=self.user1, name="User 1 Collection")
+        self.doc1 = Document.objects.create(uploaded_by=self.user1, collection=self.col1, file_name="secret1.pdf")
+        
+        # User 2 has a document
+        self.doc2 = Document.objects.create(uploaded_by=self.user2, file_name="secret2.pdf")
+        
+        self.query_url = reverse('chat-query')
+
+    @patch('chat.views.RetrieverService.retrieve_context')
+    @patch('chat.views.LLMService.generate_answer')
+    def test_user_cannot_access_other_user_document(self, mock_generate, mock_retrieve):
+        self.client.force_authenticate(user=self.user1)
+        
+        # Try to query explicitly giving user2's document_id
+        response = self.client.post(self.query_url, {
+            "query": "What is secret 2?",
+            "document_ids": [self.doc2.id] # Belongs to user2
+        })
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should return 'no documents available' rather than calling retriever
+        self.assertEqual(response.data['answer'], "You have no documents available to search in this context.")
+        mock_retrieve.assert_not_called()
+
+    @patch('chat.views.RetrieverService.retrieve_context')
+    @patch('chat.views.LLMService.generate_answer')
+    def test_user_cannot_access_other_user_collection(self, mock_generate, mock_retrieve):
+        self.client.force_authenticate(user=self.user2)
+        
+        # Try to query explicitly giving user1's collection_id
+        response = self.client.post(self.query_url, {
+            "query": "What is in collection 1?",
+            "collection_id": self.col1.id # Belongs to user1
+        })
+        
+        # get_object_or_404 should return 404 since user2 doesn't own col1
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        mock_retrieve.assert_not_called()
+
+    @patch('chat.views.RetrieverService.retrieve_context')
+    @patch('chat.views.LLMService.generate_answer')
+    def test_retriever_is_bounded_by_user_documents(self, mock_generate, mock_retrieve):
+        self.client.force_authenticate(user=self.user1)
+        
+        mock_retrieve.return_value = []
+        mock_generate.return_value = {"answer": "Some answer", "citations": []}
+        
+        # Just a normal query
+        response = self.client.post(self.query_url, {
+            "query": "What is secret 1?"
+        })
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Retriever must have been called specifically with user1's document_ids
+        mock_retrieve.assert_called_once_with("What is secret 1?", document_ids=[self.doc1.id], top_k=5)
 
