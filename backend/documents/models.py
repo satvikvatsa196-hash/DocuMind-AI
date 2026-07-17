@@ -1,3 +1,30 @@
 from django.db import models
+from django.conf import settings
 
-# Create your models here.
+class DocumentCollection(models.Model):
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='collections')
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+class Document(models.Model):
+    PROCESSING_STATUS_CHOICES = (
+        ('PENDING', 'Pending'),
+        ('PROCESSING', 'Processing'),
+        ('COMPLETED', 'Completed'),
+        ('FAILED', 'Failed'),
+    )
+
+    collection = models.ForeignKey(DocumentCollection, on_delete=models.CASCADE, related_name='documents', null=True, blank=True)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='documents')
+    file_name = models.CharField(max_length=255)
+    file_type = models.CharField(max_length=50)
+    file_path = models.FileField(upload_to='documents/%Y/%m/%d/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    processing_status = models.CharField(max_length=20, choices=PROCESSING_STATUS_CHOICES, default='PENDING')
+
+    def __str__(self):
+        return self.file_name
