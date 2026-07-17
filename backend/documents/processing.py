@@ -3,6 +3,7 @@ import fitz  # PyMuPDF
 import docx
 from django.utils import timezone
 from .models import Document
+from .chunking import ChunkingService
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,9 @@ class DocumentProcessingService:
             document.processing_status = 'COMPLETED'
             document.save(update_fields=['extracted_text', 'processing_status'])
             logger.info(f"Successfully processed document {document.id}")
+
+            # Trigger chunking
+            ChunkingService.chunk_document(document.id)
 
         except Exception as e:
             logger.error(f"Failed to process document {document.id}: {str(e)}", exc_info=True)

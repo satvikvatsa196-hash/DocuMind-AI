@@ -29,3 +29,14 @@ class Document(models.Model):
 
     def __str__(self):
         return self.file_name
+
+class DocumentChunk(models.Model):
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name='chunks')
+    chunk_text = models.TextField()
+    chunk_number = models.PositiveIntegerField()
+    page_number = models.PositiveIntegerField(null=True, blank=True)
+    metadata = models.JSONField(default=dict)
+
+    def __str__(self):
+        return f"{self.document.file_name} - Chunk {self.chunk_number}"
+

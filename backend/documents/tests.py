@@ -140,3 +140,52 @@ class DocumentProcessingTests(TestCase):
         
         self.assertEqual(document.processing_status, "FAILED")
         self.assertIsNone(document.extracted_text)
+
+from .chunking import ChunkingService
+from .models import DocumentChunk
+
+class ChunkingServiceTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='chunker', password='testpassword123')
+        self.document = Document.objects.create(
+            uploaded_by=self.user,
+            file_name="long_doc.txt",
+            file_type="txt",
+            extracted_text="A" * 2500, # 2500 characters
+            processing_status="COMPLETED"
+        )
+
+    def test_chunk_document_success(self):
+        # Chunk size 1000, overlap 200
+        # Chunks: 
+        # 1: 0 to 1000
+        # 2: 800 to 1800
+        # 3: 1600 to 2500 (900 chars)
+        result = ChunkingService.chunk_document(self.document.id, chunk_size=1000, chunk_overlap=200)
+        self.assertTrue(result)
+        
+        chunks = DocumentChunk.objects.filter(document=self.document).order_by('chunk_number')
+        self.assertEqual(chunks.count(), 3)
+        
+        self.assertEqual(len(chunks[0].chunk_text), 1000)
+        self.assertEqual(len(chunks[1].chunk_text), 1000)
+        self.assertEqual(len(chunks[2].chunk_text), 900)
+        
+        self.assertEqual(chunks[0].chunk_number, 1)
+        self.assertEqual(chunks[0].metadata['source'], 'long_doc.txt')
+        self.assertEqual(chunks[0].metadata['document_id'], self.document.id)
+
+    def test_chunk_document_no_text(self):
+        doc_no_text = Document.objects.create(
+            uploaded_by=self.user,
+            file_name="empty.txt",
+            file_type="txt",
+            extracted_text=""
+        )
+        result = ChunkingService.chunk_document(doc_no_text.id)
+        self.assertFalse(result)
+        self.assertEqual(DocumentChunk.objects.filter(document=doc_no_text).count(), 0)
+
+    def test_chunk_document_not_found(self):
+        result = ChunkingService.chunk_document(9999)
+        self.assertFalse(result)
