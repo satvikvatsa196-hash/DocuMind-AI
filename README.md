@@ -1,36 +1,102 @@
 # DocuMind AI
 
-DocuMind AI is a Retrieval-Augmented Generation (RAG) based document intelligence assistant that allows users to upload documents and interact with them using natural language queries.
+![DocuMind AI Banner](https://via.placeholder.com/1200x400/4161a8/ffffff?text=DocuMind+AI+-+Intelligent+Document+Assistant)
 
-The system combines document processing, semantic search, embeddings, vector databases, and Large Language Models (LLMs) to generate accurate answers grounded in user-provided documents with relevant source citations.
+DocuMind AI is a state-of-the-art **Retrieval-Augmented Generation (RAG)** document intelligence assistant. It empowers users to securely upload documents, organize them into collections, and interact with them using natural language queries.
 
-## Key Features
+By orchestrating document processing, semantic search via embeddings, Vector Databases, and Large Language Models (LLMs), DocuMind AI generates highly accurate answers grounded entirely in user-provided context—complete with precise source citations.
 
-- Upload and process PDF, DOCX, and TXT documents
-- Generate embeddings for semantic document search
-- Retrieve relevant document context using vector similarity search
-- Ask questions and receive AI-generated answers
-- Provide source citations for generated responses
-- Manage multiple document collections
-- Maintain chat history
-- Secure authentication using JWT.
+---
 
-## Tech Stack
+## 🏗 Architecture Diagram
 
-- **Frontend**: React + TypeScript + Vite
-- **Backend**: Django + Django REST Framework
-- **Database**: PostgreSQL
-- **Vector Database**: ChromaDB
+```mermaid
+graph TD
+    subgraph Frontend [React + Vite App]
+        UI[User Interface]
+        ReactQuery[React Query Caching]
+        Axios[Axios JWT Interceptor]
+        UI --> ReactQuery
+        ReactQuery --> Axios
+    end
 
-## Docker Deployment (Local / AWS EC2)
+    subgraph Backend [Django REST Framework]
+        API[API Endpoints]
+        JWT[SimpleJWT Auth]
+        UploadService[Document Upload Service]
+        DocProcessor[Document Extraction Service]
+        Chunker[LangChain Text Splitter]
+        LLM[OpenAI / Gemini LLM Service]
+        Retriever[ChromaDB Retriever Service]
+        
+        Axios -- REST API --> API
+        API --> JWT
+        API --> UploadService
+        UploadService --> DocProcessor
+        DocProcessor --> Chunker
+    end
 
-The easiest way to run DocuMind AI is using Docker Compose. It automatically spins up the React Frontend, Django Backend, PostgreSQL DB, and ChromaDB Vector Store.
+    subgraph Data Layer
+        Postgres[(PostgreSQL)]
+        Chroma[(ChromaDB Vector Store)]
+        
+        JWT --> Postgres
+        UploadService --> Postgres
+        Chunker --> Chroma
+        Retriever --> Chroma
+    end
+
+    API --> Retriever
+    Retriever --> LLM
+    LLM --> API
+```
+
+---
+
+## ✨ Core Features
+
+- **Multi-Format Processing**: Effortlessly ingest `.pdf`, `.docx`, and `.txt` documents.
+- **Semantic Vector Search**: Automatically generates `all-MiniLM-L6-v2` embeddings for semantic similarity retrieval.
+- **RAG Generation**: Asks intelligent questions and receives AI-generated answers grounded *strictly* in your documents.
+- **Precise Citations**: Every AI response includes direct citations tracking the document source and page number.
+- **Document Collections**: Organize your workspaces (e.g., "Machine Learning Notes").
+- **Strict Tenant Isolation**: Robust Django ORM restrictions ensure users can *never* query or access documents owned by other users.
+- **Conversational Memory**: Chat sessions remember the last 5 turns of history for seamless conversation flow.
+- **Secure Authentication**: Protected via JWT Access/Refresh tokens.
+
+---
+
+## 🛠 Technology Stack
+
+### Frontend
+- **React 18** with **TypeScript** & **Vite**
+- **Tailwind CSS v3** (Custom Glassmorphism & Micro-animations)
+- **React Query (@tanstack/react-query)** for server state
+- **React Router v6**
+
+### Backend
+- **Python 3.11** & **Django 5**
+- **Django REST Framework (DRF)**
+- **PyMuPDF** & **python-docx** for rapid document extraction
+
+### Artificial Intelligence & Database
+- **LangChain** (RAG Orchestration, Text Splitting)
+- **Sentence Transformers** (Embeddings)
+- **OpenAI API** / **Google Gemini API** (LLMs)
+- **ChromaDB** (Vector Store)
+- **PostgreSQL** (Relational Metadata & Auth Storage)
+
+---
+
+## 🚀 Setup & Installation (Docker)
+
+The easiest way to run DocuMind AI locally is via Docker Compose.
 
 ### Prerequisites
-- Docker and Docker Compose installed.
-- An OpenAI API Key (`OPENAI_API_KEY`).
+- Docker & Docker Compose
+- An OpenAI API Key
 
-### Startup Instructions
+### Steps
 
 1. **Clone the repository**:
    ```bash
@@ -39,87 +105,70 @@ The easiest way to run DocuMind AI is using Docker Compose. It automatically spi
    ```
 
 2. **Configure Environment Variables**:
-   Create a `.env` file in the root directory and add your keys:
+   Create a `.env` file in the root directory:
    ```env
    OPENAI_API_KEY=sk-your-openai-key-here
    ```
 
-3. **Start the containers**:
+3. **Spin up the stack**:
    ```bash
    docker-compose up --build -d
    ```
 
-4. **Run Database Migrations** (The backend container does this automatically, but you can trigger it manually if needed):
-   ```bash
-   docker-compose exec backend python manage.py migrate
-   ```
-
-5. **Create a Superuser** (Optional, to access Django Admin):
-   ```bash
-   docker-compose exec backend python manage.py createsuperuser
-   ```
-
-6. **Access the Application**:
-   - Frontend: `http://localhost:5173`
-   - Backend API: `http://localhost:8000`
-   - ChromaDB: `http://localhost:8001`
+4. **Access the Application**:
+   - **Frontend UI**: `http://localhost:5173`
+   - **Backend API Docs (Swagger)**: `http://localhost:8000/api/docs/`
+   - **ChromaDB**: `http://localhost:8001`
 
 ---
 
-## Deploying to Render (PaaS)
+## 📚 API Overview (Swagger UI)
 
-If you prefer a managed PaaS instead of a raw EC2 instance, you can easily deploy to Render.
+DocuMind AI ships with auto-generated OpenAPI documentation using `drf-spectacular`. 
+Once running, visit `http://localhost:8000/api/docs/` to interactively test endpoints:
 
-### 1. PostgreSQL Database
-- In the Render Dashboard, create a new **PostgreSQL** instance.
-- Copy the internal database URL.
+- `POST /api/users/login/` - Obtain JWT tokens
+- `POST /api/documents/upload/` - Upload PDF/DOCX
+- `POST /api/chat/query/` - Execute a RAG query
 
-### 2. Backend (Django)
-- Create a new **Web Service** hooked to this GitHub repository.
-- Root Directory: `backend`
-- Build Command: `pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate`
-- Start Command: `gunicorn config.wsgi:application --bind 0.0.0.0:$PORT`
-- **Environment Variables**:
-  - `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` (From your Render Postgres)
-  - `OPENAI_API_KEY`
-  - `CHROMA_DB_URL` (URL of your deployed ChromaDB instance)
+### Example RAG Request
+```json
+{
+  "query": "What are the core concepts of Machine Learning?",
+  "collection_id": 2,
+  "session_id": 5
+}
+```
 
-### 3. Frontend (React)
-- Create a new **Static Site** on Render.
-- Root Directory: `frontend`
-- Build Command: `npm install && npm run build`
-- Publish Directory: `frontend/dist`
-- **Environment Variables**:
-  - `VITE_API_URL` (URL of your Render Django Backend API)
+### Example RAG Response
+```json
+{
+  "answer": "Machine Learning core concepts include Supervised Learning, Unsupervised Learning, and Reinforcement Learning.",
+  "citations": [
+    {
+      "document_name": "ML_Notes.pdf",
+      "page_number": "4"
+    }
+  ]
+}
+```
 
-### 4. ChromaDB
-- Deploy the `chromadb/chroma` Docker image using Render's **Web Service** (Docker environment).
-- Link the internal URL to your Django Backend environment variables.
-- **AI**: LangChain, Sentence Transformers, OpenAI/Gemini API
+---
 
-## Project Structure
+## 🧗 Challenges Faced & Solutions
 
-- `frontend/`: React application containing components for authentication, dashboard, documents management, and chat interface.
-- `backend/`: Django backend with apps for users, documents, chat, and the core AI engine.
+1. **Vector Database Tenant Isolation**
+   - *Challenge*: ChromaDB does not inherently understand User roles. A bad actor could potentially query another user's vector embeddings.
+   - *Solution*: Built a strict security layer in Django that intercepts every RAG query, fetches a whitelist of PostgreSQL `document_id`s owned by the authenticated user, and binds the Vector Search securely within those boundaries.
+2. **Context Window Limitations**
+   - *Challenge*: Feeding massive PDFs directly into the LLM exceeds token limits and causes hallucinations.
+   - *Solution*: Implemented LangChain's `RecursiveCharacterTextSplitter` to dynamically chunk documents into 1000-character blocks with a 200-character overlap, ensuring sentences aren't cleanly severed.
 
-## Getting Started
+---
 
-### Prerequisites
+## 🔮 Future Improvements
 
-- Docker and Docker Compose
-
-### Setup
-
-1. Clone the repository.
-2. Ensure Docker daemon is running.
-3. Build and start the containers:
-   ```bash
-   docker-compose up --build
-   ```
-
-### Accessing the Application
-
-- **Frontend**: http://localhost:5173
-- **Backend API**: http://localhost:8000
-- **Database**: Port 5432
-- **Vector DB (ChromaDB)**: Port 8001
+- **Celery / Redis Queues**: Offload document extraction and embedding generation to asynchronous distributed task queues for massive scalability.
+- **WebSockets**: Stream LLM responses token-by-token directly to the React frontend.
+- **Advanced Chunking**: Implement semantic chunking instead of naive character chunking.
+- **GraphRAG**: Integrate knowledge graphs to understand complex relationships across disparate documents.

@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "ai_engine",
     "common",
     "rest_framework_simplejwt",
+    "drf_spectacular",
 ]
 
 MIDDLEWARE = [
@@ -146,6 +147,14 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'DocuMind AI API',
+    'DESCRIPTION': 'RAG Backend API for DocuMind AI Knowledge Assistant',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
 }
 
 # ChromaDB Settings
