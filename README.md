@@ -1,6 +1,19 @@
-# DocuMind AI Knowledge Assistant
+# DocuMind AI
 
-An AI Knowledge Assistant built with RAG (Retrieval-Augmented Generation). Users can upload documents, and the system retrieves relevant information to answer questions using an LLM.
+DocuMind AI is a Retrieval-Augmented Generation (RAG) based document intelligence assistant that allows users to upload documents and interact with them using natural language queries.
+
+The system combines document processing, semantic search, embeddings, vector databases, and Large Language Models (LLMs) to generate accurate answers grounded in user-provided documents with relevant source citations.
+
+## Key Features
+
+- Upload and process PDF, DOCX, and TXT documents
+- Generate embeddings for semantic document search
+- Retrieve relevant document context using vector similarity search
+- Ask questions and receive AI-generated answers
+- Provide source citations for generated responses
+- Manage multiple document collections
+- Maintain chat history
+- Secure authentication using JWT.
 
 ## Tech Stack
 
