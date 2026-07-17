@@ -2,7 +2,7 @@ import json
 import os
 import logging
 from langchain_community.chat_models import ChatOpenAI
-from langchain.schema import HumanMessage, SystemMessage
+from langchain.schema import HumanMessage, SystemMessage, AIMessage
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,10 @@ class LLMService:
         api_key = os.environ.get("OPENAI_API_KEY", "dummy_key")
         self.llm = ChatOpenAI(temperature=0.0, openai_api_key=api_key, model_name="gpt-3.5-turbo")
 
-    def generate_answer(self, question, context_chunks):
+    def generate_answer(self, question, context_chunks, chat_history=None):
+        if chat_history is None:
+            chat_history = []
+            
         # Build context string
         context_text = ""
         for idx, chunk in enumerate(context_chunks):
@@ -44,9 +47,17 @@ Ensure your response is valid JSON. Do not include markdown code block formattin
 """
 
         messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=f"Context:\n{context_text}\n\nQuestion: {question}")
+            SystemMessage(content=system_prompt)
         ]
+        
+        # Append previous chat history
+        for msg in chat_history:
+            if msg["role"] == "USER":
+                messages.append(HumanMessage(content=msg["content"]))
+            elif msg["role"] == "AI":
+                messages.append(AIMessage(content=msg["content"]))
+
+        messages.append(HumanMessage(content=f"Context:\n{context_text}\n\nQuestion: {question}"))
 
         try:
             response = self.llm.invoke(messages)
