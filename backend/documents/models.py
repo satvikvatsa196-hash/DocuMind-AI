@@ -23,6 +23,7 @@ class Document(models.Model):
     file_name = models.CharField(max_length=255)
     file_type = models.CharField(max_length=50)
     file_path = models.FileField(upload_to='documents/%Y/%m/%d/')
+    extracted_text = models.TextField(blank=True, null=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     processing_status = models.CharField(max_length=20, choices=PROCESSING_STATUS_CHOICES, default='PENDING')
 

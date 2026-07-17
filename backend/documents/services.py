@@ -1,6 +1,8 @@
 import os
 from django.core.exceptions import ValidationError
 from .models import Document, DocumentCollection
+import threading
+from .processing import DocumentProcessingService
 
 ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.txt'}
 MAX_FILE_SIZE_MB = 10
@@ -39,4 +41,10 @@ class DocumentService:
             processing_status='PENDING'
         )
         document.save()
+
+        # Start text extraction in the background
+        thread = threading.Thread(target=DocumentProcessingService.process_document, args=(document.id,))
+        thread.daemon = True
+        thread.start()
+
         return document

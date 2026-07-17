@@ -61,3 +61,82 @@ class DocumentUploadTests(TestCase):
         self.assertEqual(Document.objects.count(), 1)
         doc = Document.objects.first()
         self.assertEqual(doc.collection, collection)
+
+from unittest.mock import patch
+from .processing import DocumentProcessingService
+
+class DocumentProcessingTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='processor', password='testpassword123')
+        
+    @patch('documents.processing.DocumentProcessingService._extract_txt')
+    def test_process_txt_document(self, mock_extract_txt):
+        mock_extract_txt.return_value = "Mocked TXT content"
+        file = SimpleUploadedFile("test.txt", b"Mocked TXT content", content_type="text/plain")
+        document = Document.objects.create(
+            uploaded_by=self.user,
+            file_name="test.txt",
+            file_type="txt",
+            file_path=file,
+            processing_status="PENDING"
+        )
+        
+        DocumentProcessingService.process_document(document.id)
+        document.refresh_from_db()
+        
+        self.assertEqual(document.processing_status, "COMPLETED")
+        self.assertEqual(document.extracted_text, "Mocked TXT content")
+
+    @patch('documents.processing.DocumentProcessingService._extract_pdf')
+    def test_process_pdf_document(self, mock_extract_pdf):
+        mock_extract_pdf.return_value = "Mocked PDF content"
+        file = SimpleUploadedFile("test.pdf", b"dummy pdf", content_type="application/pdf")
+        document = Document.objects.create(
+            uploaded_by=self.user,
+            file_name="test.pdf",
+            file_type="pdf",
+            file_path=file,
+            processing_status="PENDING"
+        )
+        
+        DocumentProcessingService.process_document(document.id)
+        document.refresh_from_db()
+        
+        self.assertEqual(document.processing_status, "COMPLETED")
+        self.assertEqual(document.extracted_text, "Mocked PDF content")
+
+    @patch('documents.processing.DocumentProcessingService._extract_docx')
+    def test_process_docx_document(self, mock_extract_docx):
+        mock_extract_docx.return_value = "Mocked DOCX content"
+        file = SimpleUploadedFile("test.docx", b"dummy docx", content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        document = Document.objects.create(
+            uploaded_by=self.user,
+            file_name="test.docx",
+            file_type="docx",
+            file_path=file,
+            processing_status="PENDING"
+        )
+        
+        DocumentProcessingService.process_document(document.id)
+        document.refresh_from_db()
+        
+        self.assertEqual(document.processing_status, "COMPLETED")
+        self.assertEqual(document.extracted_text, "Mocked DOCX content")
+
+    @patch('documents.processing.DocumentProcessingService._extract_txt')
+    def test_process_document_failure(self, mock_extract_txt):
+        mock_extract_txt.side_effect = Exception("Simulated extraction error")
+        file = SimpleUploadedFile("test.txt", b"Mocked TXT content", content_type="text/plain")
+        document = Document.objects.create(
+            uploaded_by=self.user,
+            file_name="test.txt",
+            file_type="txt",
+            file_path=file,
+            processing_status="PENDING"
+        )
+        
+        DocumentProcessingService.process_document(document.id)
+        document.refresh_from_db()
+        
+        self.assertEqual(document.processing_status, "FAILED")
+        self.assertIsNone(document.extracted_text)
