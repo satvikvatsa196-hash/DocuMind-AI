@@ -7,3 +7,4 @@ langchain==0.1.13
 sentence-transformers==2.6.1
 openai==1.14.2
 python-dotenv==1.0.1
+djangorestframework-simplejwt==5.3.1
