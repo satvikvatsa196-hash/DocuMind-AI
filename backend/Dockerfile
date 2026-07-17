@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install system dependencies for PostgreSQL and building packages
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc libpq-dev \
+    && apt-get install -y --no-install-recommends gcc libpq-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

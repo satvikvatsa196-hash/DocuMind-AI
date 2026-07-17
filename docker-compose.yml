@@ -11,6 +11,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U documind_user -d documind"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend:
     build:
@@ -23,7 +28,10 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
     environment:
       - DB_NAME=documind
       - DB_USER=documind_user
@@ -31,6 +39,12 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - CHROMA_DB_URL=http://chromadb:8000
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/admin/login/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   frontend:
     build:
@@ -42,6 +56,8 @@ services:
       - "5173:5173"
     environment:
       - VITE_API_URL=http://localhost:8000/api
+    depends_on:
+      - backend
 
   chromadb:
     image: chromadb/chroma:latest
