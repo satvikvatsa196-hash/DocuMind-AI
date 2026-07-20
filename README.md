@@ -18,8 +18,9 @@ graph TD
         ReactQuery --> Axios
     end
 
-    subgraph Backend [Django REST Framework]
-        API[API Endpoints]
+    subgraph Backend [Uvicorn ASGI Server]
+        Django[Django REST Framework]
+        FastAPI[FastAPI Streaming App]
         JWT[SimpleJWT Auth]
         UploadService[Document Upload Service]
         DocProcessor[Document Extraction Service]
@@ -27,9 +28,11 @@ graph TD
         LLM[OpenAI / Gemini LLM Service]
         Retriever[ChromaDB Retriever Service]
         
-        Axios -- REST API --> API
-        API --> JWT
-        API --> UploadService
+        Axios -- REST API --> Django
+        Axios -- SSE Stream --> FastAPI
+        Django --> JWT
+        FastAPI --> JWT
+        Django --> UploadService
         UploadService --> DocProcessor
         DocProcessor --> Chunker
     end
@@ -44,9 +47,11 @@ graph TD
         Retriever --> Chroma
     end
 
-    API --> Retriever
+    Django --> Retriever
+    FastAPI --> Retriever
     Retriever --> LLM
-    LLM --> API
+    LLM --> Django
+    LLM --> FastAPI
 ```
 
 ---
@@ -55,6 +60,7 @@ graph TD
 
 - **Multi-Format Processing**: Effortlessly ingest `.pdf`, `.docx`, and `.txt` documents.
 - **Semantic Vector Search**: Automatically generates `all-MiniLM-L6-v2` embeddings for semantic similarity retrieval.
+- **Real-Time AI Streaming**: Experience token-by-token ChatGPT-like responses powered by Server-Sent Events (SSE) and FastAPI.
 - **RAG Generation**: Asks intelligent questions and receives AI-generated answers grounded *strictly* in your documents.
 - **Precise Citations**: Every AI response includes direct citations tracking the document source and page number.
 - **Document Collections**: Organize your workspaces (e.g., "Machine Learning Notes").
@@ -73,8 +79,9 @@ graph TD
 - **React Router v6**
 
 ### Backend
-- **Python 3.11** & **Django 5**
-- **Django REST Framework (DRF)**
+- **Python 3.11** 
+- **Django 5 & Django REST Framework (DRF)** for core API logic
+- **FastAPI & Uvicorn (ASGI)** for asynchronous SSE streaming
 - **PyMuPDF** & **python-docx** for rapid document extraction
 
 ### Artificial Intelligence & Database
@@ -127,7 +134,8 @@ Once running, visit `http://localhost:8000/api/docs/` to interactively test endp
 
 - `POST /api/users/login/` - Obtain JWT tokens
 - `POST /api/documents/upload/` - Upload PDF/DOCX
-- `POST /api/chat/query/` - Execute a RAG query
+- `POST /api/chat/query/` - Execute a RAG query (Standard)
+- `POST /api/chat/fastapi/stream/` - Execute a RAG query using Server-Sent Events (SSE) for token-by-token streaming
 
 ### Example RAG Request
 ```json
@@ -161,12 +169,14 @@ Once running, visit `http://localhost:8000/api/docs/` to interactively test endp
 2. **Context Window Limitations**
    - *Challenge*: Feeding massive PDFs directly into the LLM exceeds token limits and causes hallucinations.
    - *Solution*: Implemented LangChain's `RecursiveCharacterTextSplitter` to dynamically chunk documents into 1000-character blocks with a 200-character overlap, ensuring sentences aren't cleanly severed.
+3. **Synchronous Django vs Real-Time Streaming**
+   - *Challenge*: Django's WSGI and standard DRF views cannot natively stream asynchronous tokens dynamically without complex workarounds or Daphne.
+   - *Solution*: Mounted a dedicated **FastAPI** application directly alongside Django within a combined **Uvicorn ASGI** server. Leveraged `sync_to_async` to securely connect FastAPI's asynchronous streaming generators with Django's synchronous ORM.
 
 ---
 
 ## 🔮 Future Improvements
 
 - **Celery / Redis Queues**: Offload document extraction and embedding generation to asynchronous distributed task queues for massive scalability.
-- **WebSockets**: Stream LLM responses token-by-token directly to the React frontend.
 - **Advanced Chunking**: Implement semantic chunking instead of naive character chunking.
 - **GraphRAG**: Integrate knowledge graphs to understand complex relationships across disparate documents.

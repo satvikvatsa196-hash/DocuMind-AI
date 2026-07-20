@@ -84,3 +84,53 @@ Ensure your response is valid JSON. Do not include markdown code block formattin
                 "answer": "An error occurred while generating the answer.",
                 "citations": []
             }
+
+    async def stream_generate_answer(self, question, context_chunks, chat_history=None):
+        if chat_history is None:
+            chat_history = []
+            
+        context_text = ""
+        citations = []
+        for idx, chunk in enumerate(context_chunks):
+            metadata = chunk.get("metadata", {})
+            source = metadata.get("source", "Unknown Document")
+            page = metadata.get("page_number", "-1")
+            
+            citations.append({
+                "document_name": source,
+                "page_number": page
+            })
+            
+            context_text += f"\n--- Context Chunk {idx+1} (Source: {source}, Page: {page}) ---\n"
+            context_text += chunk.get("text", "")
+            
+        system_prompt = """You are a helpful AI document assistant. 
+Answer the user's question ONLY using the provided document context. 
+If the information is unavailable in the context, strictly say exactly: "I don't have enough information from the documents."
+
+Provide your answer as plain text without any markdown or JSON formatting.
+"""
+
+        messages = [
+            SystemMessage(content=system_prompt)
+        ]
+        
+        for msg in chat_history:
+            if msg["role"] == "USER":
+                messages.append(HumanMessage(content=msg["content"]))
+            elif msg["role"] == "AI":
+                messages.append(AIMessage(content=msg["content"]))
+
+        messages.append(HumanMessage(content=f"Context:\n{context_text}\n\nQuestion: {question}"))
+
+        try:
+            async for chunk in self.llm.astream(messages):
+                if chunk.content:
+                    yield {"token": chunk.content}
+                    
+            # After finishing the text, yield the citations
+            yield {"citations": citations}
+        except Exception as e:
+            logger.error(f"Error in LLM stream: {e}")
+            yield {"token": f"\n\n[Error: {str(e)}]"}
+

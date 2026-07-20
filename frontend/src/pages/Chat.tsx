@@ -29,25 +29,51 @@ export default function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [localMessages]);
 
-  const queryMutation = useMutation({
-    mutationFn: chatApi.query,
-    onSuccess: (data, variables) => {
-      setLocalMessages(prev => [...prev, { role: 'AI', message: data.answer, citations: data.citations }]);
-    }
-  });
+  const [isStreaming, setIsStreaming] = useState(false);
+
+  const runStreamQuery = async (queryText: string, sessionIdToUse: number, collectionIdToUse?: number) => {
+    setIsStreaming(true);
+    setLocalMessages(prev => [...prev, { role: 'AI', message: '', citations: [] }]);
+    
+    await chatApi.streamQuery(
+      { query: queryText, session_id: sessionIdToUse, collection_id: collectionIdToUse },
+      (chunk) => {
+        setLocalMessages(prev => {
+          const newMessages = [...prev];
+          const lastIndex = newMessages.length - 1;
+          const lastMsg = { ...newMessages[lastIndex] };
+          
+          if (chunk.token) {
+            lastMsg.message += chunk.token;
+          }
+          if (chunk.citations) {
+            lastMsg.citations = chunk.citations;
+          }
+          newMessages[lastIndex] = lastMsg;
+          return newMessages;
+        });
+      },
+      () => {
+        setIsStreaming(false);
+      },
+      (err) => {
+        console.error("Stream error:", err);
+        setIsStreaming(false);
+      }
+    );
+  };
 
   const sessionMutation = useMutation({
     mutationFn: chatApi.createSession,
     onSuccess: (session, variables) => {
       navigate(`/chat/${session.id}`);
-      // Immediately fire the query with new session
-      queryMutation.mutate({ query: variables.initialQuery, session_id: session.id, collection_id: collectionId ? Number(collectionId) : undefined });
+      runStreamQuery((variables as any).initialQuery, session.id, collectionId ? Number(collectionId) : undefined);
     }
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || queryMutation.isPending) return;
+    if (!input.trim() || isStreaming || sessionMutation.isPending) return;
 
     const userMessage = input.trim();
     setInput('');
@@ -59,7 +85,7 @@ export default function Chat() {
         initialQuery: userMessage 
       } as any);
     } else {
-      queryMutation.mutate({ query: userMessage, session_id: Number(sessionId) });
+      runStreamQuery(userMessage, Number(sessionId));
     }
   };
 
@@ -126,7 +152,7 @@ export default function Chat() {
             </div>
           ))}
           
-          {(queryMutation.isPending || sessionMutation.isPending) && (
+          {(isStreaming && localMessages[localMessages.length - 1]?.message === '' || sessionMutation.isPending) && (
              <div className="flex gap-4">
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 text-white flex items-center justify-center shrink-0">
                 <Bot size={18} />
@@ -148,11 +174,11 @@ export default function Chat() {
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask anything about your documents..."
               className="w-full pl-4 pr-12 py-4 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:bg-white transition-all shadow-inner"
-              disabled={queryMutation.isPending || sessionMutation.isPending}
+              disabled={isStreaming || sessionMutation.isPending}
             />
             <button
               type="submit"
-              disabled={!input.trim() || queryMutation.isPending || sessionMutation.isPending}
+              disabled={!input.trim() || isStreaming || sessionMutation.isPending}
               className="absolute right-2 p-2 bg-brand-600 text-white rounded-lg hover:bg-brand-500 disabled:opacity-50 disabled:hover:bg-brand-600 transition-colors"
             >
               <Send size={18} />

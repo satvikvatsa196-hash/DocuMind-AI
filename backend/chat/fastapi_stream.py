@@ -1,0 +1,136 @@
+import json
+import asyncio
+import jwt
+import logging
+from typing import Optional, List
+from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from django.conf import settings
+from asgiref.sync import sync_to_async
+
+from django.contrib.auth import get_user_model
+from chat.models import ChatSession, ChatMessage
+from documents.models import Document, DocumentCollection
+from ai_engine.retriever import RetrieverService
+from ai_engine.llm import LLMService
+
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="DocuMind AI Streaming API")
+
+class StreamRequest(BaseModel):
+    query: str
+    session_id: Optional[int] = None
+    collection_id: Optional[int] = None
+    document_ids: Optional[List[int]] = None
+
+async def get_current_user(authorization: str = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        user_id = payload.get("user_id")
+        User = get_user_model()
+        user = await sync_to_async(User.objects.get)(id=user_id)
+        return user
+    except Exception as e:
+        logger.error(f"JWT verification failed: {e}")
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+@app.post("/stream/")
+async def stream_chat(request: StreamRequest, user=Depends(get_current_user)):
+    query = request.query
+    session_id = request.session_id
+    collection_id = request.collection_id
+    document_ids = request.document_ids
+
+    if not query:
+        raise HTTPException(status_code=400, detail="Query is required.")
+
+    # We need to run DB queries in sync context
+    async def get_session_and_history():
+        session = None
+        chat_history = []
+        if session_id:
+            try:
+                session = ChatSession.objects.get(id=session_id, user=user)
+                if session.collection:
+                    nonlocal collection_id
+                    collection_id = session.collection.id
+                
+                recent_messages = ChatMessage.objects.filter(session=session).order_by('-timestamp')[:10]
+                for msg in reversed(list(recent_messages)):
+                    chat_history.append({
+                        "role": msg.role,
+                        "content": msg.message
+                    })
+                
+                # Save user message
+                ChatMessage.objects.create(session=session, role='USER', message=query)
+            except ChatSession.DoesNotExist:
+                raise HTTPException(status_code=404, detail="Session not found.")
+        return session, chat_history
+
+    session, chat_history = await sync_to_async(get_session_and_history)()
+
+    # Get allowed documents
+    async def get_allowed_documents():
+        allowed_docs = Document.objects.filter(uploaded_by=user)
+        if collection_id:
+            try:
+                collection = DocumentCollection.objects.get(id=collection_id, owner=user)
+                allowed_docs = allowed_docs.filter(collection=collection)
+            except DocumentCollection.DoesNotExist:
+                pass
+        if document_ids:
+            allowed_docs = allowed_docs.filter(id__in=document_ids)
+            
+        return list(allowed_docs.values_list('id', flat=True))
+
+    user_document_ids = await sync_to_async(get_allowed_documents)()
+
+    if not user_document_ids:
+        async def no_docs_response():
+            yield "data: " + json.dumps({"token": "You have no documents available to search in this context."}) + "\n\n"
+            if session:
+                await sync_to_async(ChatMessage.objects.create)(session=session, role='AI', message="You have no documents available to search in this context.")
+            yield "event: end\ndata: {}\n\n"
+        return StreamingResponse(no_docs_response(), media_type="text/event-stream")
+
+    # Retrieve context
+    context_chunks = await sync_to_async(RetrieverService.retrieve_context)(
+        query, document_ids=user_document_ids, top_k=5
+    )
+
+    llm_service = LLMService()
+
+    async def generate():
+        full_answer = ""
+        try:
+            async for chunk_data in llm_service.stream_generate_answer(query, context_chunks, chat_history):
+                if chunk_data.get("token"):
+                    full_answer += chunk_data["token"]
+                    yield "data: " + json.dumps({"token": chunk_data["token"]}) + "\n\n"
+                elif chunk_data.get("citations"):
+                    yield "data: " + json.dumps({"citations": chunk_data["citations"]}) + "\n\n"
+            
+            # After streaming is complete, save the full response
+            if session:
+                await sync_to_async(ChatMessage.objects.create)(session=session, role='AI', message=full_answer)
+                
+            yield "event: end\ndata: {}\n\n"
+            
+        except asyncio.CancelledError:
+            # Handle client disconnect gracefully
+            logger.info("Client disconnected during stream")
+            if session and full_answer:
+                await sync_to_async(ChatMessage.objects.create)(session=session, role='AI', message=full_answer)
+        except Exception as e:
+            logger.error(f"Error during streaming: {e}")
+            yield "event: error\ndata: " + json.dumps({"detail": "An error occurred during generation."}) + "\n\n"
+            if session and full_answer:
+                await sync_to_async(ChatMessage.objects.create)(session=session, role='AI', message=full_answer)
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
