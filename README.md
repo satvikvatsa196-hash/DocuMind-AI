@@ -62,7 +62,7 @@ graph TD
 - **Semantic Vector Search**: Automatically generates `all-MiniLM-L6-v2` embeddings for semantic similarity retrieval.
 - **Real-Time AI Streaming**: Experience token-by-token ChatGPT-like responses powered by Server-Sent Events (SSE) and FastAPI.
 - **RAG Generation**: Asks intelligent questions and receives AI-generated answers grounded *strictly* in your documents.
-- **Precise Citations**: Every AI response includes direct citations tracking the document source and page number.
+- **Precise Citations & Highlights**: Every AI response includes direct citations tracking the document source, page number, AI relevance score, and the exact highlighted passage used to generate the answer. Clicking a citation instantly navigates the user to the precise location.
 - **Document Collections**: Organize your workspaces (e.g., "Machine Learning Notes").
 - **Strict Tenant Isolation**: Robust Django ORM restrictions ensure users can *never* query or access documents owned by other users.
 - **Conversational Memory**: Chat sessions remember the last 5 turns of history for seamless conversation flow.
@@ -153,7 +153,17 @@ Once running, visit `http://localhost:8000/api/docs/` to interactively test endp
   "citations": [
     {
       "document_name": "ML_Notes.pdf",
-      "page_number": "4"
+      "page_number": "4",
+      "chunk_id": "doc_1_chunk_4_abc123"
+    }
+  ],
+  "retrieved_passages": [
+    {
+      "document_name": "ML_Notes.pdf",
+      "page_number": "4",
+      "chunk_id": "doc_1_chunk_4_abc123",
+      "chunk_text": "Machine Learning core concepts include Supervised Learning, Unsupervised Learning, and Reinforcement Learning...",
+      "relevance_score": 0.94
     }
   ]
 }

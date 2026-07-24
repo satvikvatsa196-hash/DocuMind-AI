@@ -49,6 +49,9 @@ export default function Chat() {
           if (chunk.citations) {
             lastMsg.citations = chunk.citations;
           }
+          if (chunk.retrieved_passages) {
+            lastMsg.retrieved_passages = chunk.retrieved_passages;
+          }
           newMessages[lastIndex] = lastMsg;
           return newMessages;
         });
@@ -134,16 +137,39 @@ export default function Chat() {
                 <p className="whitespace-pre-wrap">{msg.message}</p>
                 
                 {/* Citations */}
-                {msg.citations && msg.citations.length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
+                {/* Citations and Retrieved Passages */}
+                {(msg.citations?.length > 0 || msg.retrieved_passages?.length > 0) && (
+                  <div className="mt-4 pt-4 border-t border-slate-100 space-y-3">
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                      <Book size={12} /> Sources
+                      <Book size={12} /> Sources & Highlights
                     </p>
-                    <div className="flex flex-wrap gap-2">
-                      {msg.citations.map((cite: any, cidx: number) => (
-                        <span key={cidx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-50 border border-slate-200 text-xs text-slate-600 font-medium">
-                          {cite.document_name} {cite.page_number && cite.page_number !== "-1" ? `(Pg ${cite.page_number})` : ''}
-                        </span>
+                    <div className="flex flex-col gap-3">
+                      {(msg.retrieved_passages || msg.citations).map((cite: any, cidx: number) => (
+                        <div key={cidx} className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                          <div className="flex justify-between items-center mb-2">
+                            <a 
+                              href={`#document-viewer-${cite.document_name}`}
+                              className="font-medium text-sm text-brand-600 hover:text-brand-700 cursor-pointer hover:underline transition-colors flex items-center gap-1"
+                              onClick={(e) => {
+                                // Simulate navigating directly to the corresponding page in the document viewer
+                                e.preventDefault();
+                                alert(`Navigating to ${cite.document_name} on page ${cite.page_number}`);
+                              }}
+                            >
+                              {cite.document_name} {cite.page_number && cite.page_number !== "-1" && cite.page_number !== -1 ? `(Pg ${cite.page_number})` : ''}
+                            </a>
+                            {cite.relevance_score && (
+                              <span className="text-[10px] font-medium text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200 shadow-sm">
+                                {Math.round(cite.relevance_score * 100)}% Match
+                              </span>
+                            )}
+                          </div>
+                          {cite.chunk_text && (
+                            <p className="text-xs text-slate-600 border-l-2 border-brand-400 pl-3 py-1 my-1 bg-white rounded-r-md shadow-sm">
+                              ... {cite.chunk_text} ...
+                            </p>
+                          )}
+                        </div>
                       ))}
                     </div>
                   </div>

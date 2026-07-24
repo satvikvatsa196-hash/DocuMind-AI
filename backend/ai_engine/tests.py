@@ -58,7 +58,12 @@ class EmbeddingServiceTests(TestCase):
         # Setup mock retrieval results
         mock_collection.query.return_value = {
             'documents': [['This is the first chunk of text.']],
-            'metadatas': [[{'document_id': self.document.id}]],
+            'metadatas': [[{
+                'document_id': self.document.id, 
+                'document_name': self.document.file_name,
+                'page_number': 1,
+                'chunk_id': self.chunk1.id
+            }]],
             'distances': [[0.05]],
             'ids': [['doc_1_chunk_1_abc']]
         }
@@ -72,4 +77,65 @@ class EmbeddingServiceTests(TestCase):
         
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]['text'], 'This is the first chunk of text.')
+        self.assertEqual(results[0]['document_name'], 'test_embed.pdf')
+        self.assertEqual(results[0]['page_number'], 1)
+        self.assertEqual(results[0]['chunk_id'], self.chunk1.id)
+        self.assertAlmostEqual(results[0]['relevance_score'], 0.95)
         mock_collection.query.assert_called_once()
+
+from ai_engine.llm import LLMService
+
+class LLMServiceTests(TestCase):
+    @patch('ai_engine.llm.ChatOpenAI')
+    def test_generate_answer_citations(self, MockChatOpenAI):
+        # Setup mock response
+        mock_llm_instance = MockChatOpenAI.return_value
+        mock_response = MagicMock()
+        mock_response.content = '''
+        {
+          "answer": "This is the generated answer.",
+          "citations": [
+            {
+              "document_name": "test_embed.pdf",
+              "page_number": 1,
+              "chunk_id": "123"
+            }
+          ]
+        }
+        '''
+        mock_llm_instance.invoke.return_value = mock_response
+
+        service = LLMService()
+        
+        # Fake chunks list matching retrieve_similar_chunks output
+        context_chunks = [
+            {
+                "text": "This is the first chunk of text.",
+                "document_name": "test_embed.pdf",
+                "page_number": 1,
+                "chunk_id": 123,
+                "relevance_score": 0.95
+            },
+            {
+                "text": "Irrelevant chunk.",
+                "document_name": "test_embed.pdf",
+                "page_number": 2,
+                "chunk_id": 124,
+                "relevance_score": 0.8
+            }
+        ]
+
+        result = service.generate_answer("test query?", context_chunks)
+        
+        self.assertEqual(result["answer"], "This is the generated answer.")
+        self.assertEqual(len(result["citations"]), 1)
+        self.assertEqual(result["citations"][0]["chunk_id"], "123")
+        self.assertEqual(len(result["retrieved_passages"]), 1)
+        
+        # Verify retrieved passages contains expected chunk
+        passage = result["retrieved_passages"][0]
+        self.assertEqual(passage["chunk_id"], 123)
+        self.assertEqual(passage["document_name"], "test_embed.pdf")
+        self.assertEqual(passage["page_number"], 1)
+        self.assertEqual(passage["chunk_text"], "This is the first chunk of text.")
+        self.assertEqual(passage["relevance_score"], 0.95)

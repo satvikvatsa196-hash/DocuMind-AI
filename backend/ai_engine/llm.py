@@ -1,8 +1,8 @@
 import json
 import os
 import logging
-from langchain_community.chat_models import ChatOpenAI
-from langchain.schema import HumanMessage, SystemMessage, AIMessage
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 logger = logging.getLogger(__name__)
 
@@ -18,12 +18,15 @@ class LLMService:
             
         # Build context string
         context_text = ""
+        chunk_map = {}
         for idx, chunk in enumerate(context_chunks):
-            metadata = chunk.get("metadata", {})
-            source = metadata.get("source", "Unknown Document")
-            page = metadata.get("page_number", "-1")
+            source = chunk.get("document_name", "Unknown Document")
+            page = chunk.get("page_number", -1)
+            chunk_id = chunk.get("chunk_id", -1)
             
-            context_text += f"\n--- Context Chunk {idx+1} (Source: {source}, Page: {page}) ---\n"
+            chunk_map[str(chunk_id)] = chunk
+            
+            context_text += f"\n--- Context Chunk {idx+1} (Source: {source}, Page: {page}, Chunk ID: {chunk_id}) ---\n"
             context_text += chunk.get("text", "")
             
         system_prompt = """You are a helpful AI document assistant. 
@@ -36,7 +39,8 @@ You MUST return your answer in valid JSON format matching this schema exactly:
   "citations": [
     {
       "document_name": "filename.pdf",
-      "page_number": "1"
+      "page_number": "1",
+      "chunk_id": "123"
     }
   ]
 }
@@ -71,18 +75,48 @@ Ensure your response is valid JSON. Do not include markdown code block formattin
             if content.endswith("```"):
                 content = content[:-3]
                 
-            return json.loads(content.strip())
+            parsed_response = json.loads(content.strip())
+            
+            # Deduplicate citations and add highlighted passages
+            unique_citations = []
+            seen_chunk_ids = set()
+            retrieved_passages = []
+            
+            for cit in parsed_response.get("citations", []):
+                c_id = str(cit.get("chunk_id"))
+                if c_id not in seen_chunk_ids and c_id in chunk_map:
+                    seen_chunk_ids.add(c_id)
+                    unique_citations.append(cit)
+                    orig_chunk = chunk_map[c_id]
+                    retrieved_passages.append({
+                        "document_name": orig_chunk.get("document_name"),
+                        "page_number": orig_chunk.get("page_number"),
+                        "chunk_id": orig_chunk.get("chunk_id"),
+                        "chunk_text": orig_chunk.get("text"),
+                        "relevance_score": orig_chunk.get("relevance_score")
+                    })
+                    
+            # Sort retrieved passages by relevance score descending
+            retrieved_passages.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
+            
+            return {
+                "answer": parsed_response.get("answer", ""),
+                "citations": unique_citations,
+                "retrieved_passages": retrieved_passages
+            }
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON from LLM: {response.content}")
             return {
                 "answer": "I processed the answer but failed to format it correctly.",
-                "citations": []
+                "citations": [],
+                "retrieved_passages": []
             }
         except Exception as e:
             logger.error(f"LLM API Call failed: {e}")
             return {
                 "answer": "An error occurred while generating the answer.",
-                "citations": []
+                "citations": [],
+                "retrieved_passages": []
             }
 
     async def stream_generate_answer(self, question, context_chunks, chat_history=None):
@@ -92,16 +126,19 @@ Ensure your response is valid JSON. Do not include markdown code block formattin
         context_text = ""
         citations = []
         for idx, chunk in enumerate(context_chunks):
-            metadata = chunk.get("metadata", {})
-            source = metadata.get("source", "Unknown Document")
-            page = metadata.get("page_number", "-1")
+            source = chunk.get("document_name", "Unknown Document")
+            page = chunk.get("page_number", -1)
+            chunk_id = chunk.get("chunk_id", -1)
             
             citations.append({
                 "document_name": source,
-                "page_number": page
+                "page_number": page,
+                "chunk_id": chunk_id,
+                "chunk_text": chunk.get("text"),
+                "relevance_score": chunk.get("relevance_score")
             })
             
-            context_text += f"\n--- Context Chunk {idx+1} (Source: {source}, Page: {page}) ---\n"
+            context_text += f"\n--- Context Chunk {idx+1} (Source: {source}, Page: {page}, Chunk ID: {chunk_id}) ---\n"
             context_text += chunk.get("text", "")
             
         system_prompt = """You are a helpful AI document assistant. 

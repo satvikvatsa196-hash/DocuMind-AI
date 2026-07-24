@@ -55,6 +55,7 @@ class EmbeddingService:
             metadata = {
                 "chunk_id": chunk.id,
                 "document_id": chunk.document.id,
+                "document_name": chunk.document.file_name,
                 "chunk_number": chunk.chunk_number,
                 "page_number": chunk.page_number if chunk.page_number is not None else -1,
             }
@@ -116,11 +117,18 @@ class EmbeddingService:
             formatted_results = []
             if results and 'documents' in results and len(results['documents']) > 0:
                 for i in range(len(results['documents'][0])):
+                    # ChromaDB distance using cosine space is 1 - cosine similarity
+                    distance = results['distances'][0][i] if 'distances' in results and results['distances'] else 0.0
+                    metadata = results['metadatas'][0][i] if results['metadatas'] else {}
                     formatted_results.append({
                         "text": results['documents'][0][i],
-                        "metadata": results['metadatas'][0][i] if results['metadatas'] else {},
-                        "distance": results['distances'][0][i] if 'distances' in results and results['distances'] else None,
-                        "id": results['ids'][0][i]
+                        "metadata": metadata,
+                        "distance": distance,
+                        "id": results['ids'][0][i],
+                        "relevance_score": 1.0 - distance,
+                        "document_name": metadata.get("document_name", "Unknown Document"),
+                        "page_number": metadata.get("page_number", -1),
+                        "chunk_id": metadata.get("chunk_id", -1)
                     })
                     
             return formatted_results
