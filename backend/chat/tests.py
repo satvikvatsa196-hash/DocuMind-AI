@@ -92,6 +92,47 @@ class ChatQueryTests(TestCase):
         self.assertEqual(messages[1].role, 'AI')
         self.assertEqual(messages[1].message, 'This is a test response.')
 
+    @patch('chat.views.RetrieverService.retrieve_context')
+    @patch('chat.views.LLMService.generate_answer')
+    def test_query_debug_mode(self, mock_generate, mock_retrieve):
+        # Mock Context Retrieval
+        mock_retrieve.return_value = (
+            [{"text": "Python is a programming language.", "relevance_score": 0.9, "chunk_id": "c1", "document_name": "python_doc.txt"}],
+            384 # embedding dim
+        )
+        
+        # Mock LLM Response
+        mock_generate.return_value = {
+            "answer": "Python is a programming language.",
+            "citations": [],
+            "debug_info": {
+                "prompt_sent": "SYSTEM: You are helpful\nUSER: Context: ...",
+                "token_count": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+            }
+        }
+
+        Document.objects.create(uploaded_by=self.user, file_name="test.txt")
+
+        response = self.client.post(self.query_url, {"query": "What is Python?", "debug": True})
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["answer"], "Python is a programming language.")
+        self.assertIn("debug", response.data)
+        self.assertEqual(response.data["debug"]["original_user_question"], "What is Python?")
+        self.assertEqual(response.data["debug"]["generated_embedding_dimension"], 384)
+        self.assertIn("response_generation_time", response.data["debug"])
+        self.assertEqual(response.data["debug"]["token_count"]["total_tokens"], 15)
+        
+        # Test disable debug
+        with self.settings(ENABLE_DEBUG_MODE=False):
+            # The retriever will be called without debug since is_debug evaluates to False
+            mock_retrieve.return_value = [{"text": "Python is a programming language."}]
+            mock_generate.return_value = {"answer": "Python is a programming language.", "citations": []}
+            
+            response = self.client.post(self.query_url, {"query": "What is Python?", "debug": True})
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertNotIn("debug", response.data)
+
     def test_get_chat_messages(self):
         session = ChatSession.objects.create(user=self.user)
         ChatMessage.objects.create(session=session, role='USER', message='Msg 1')

@@ -160,3 +160,7 @@ SPECTACULAR_SETTINGS = {
 # ChromaDB Settings
 CHROMA_DB_URL = os.environ.get("CHROMA_DB_URL", "http://localhost:8001")
 CHROMA_DB_COLLECTION = os.environ.get("CHROMA_DB_COLLECTION", "documind_collection")
+
+# Debug Mode Configuration
+ENABLE_DEBUG_MODE = os.environ.get("ENABLE_DEBUG_MODE", "True").lower() == "true"
+

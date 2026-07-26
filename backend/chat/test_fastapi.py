@@ -84,3 +84,43 @@ class FastAPIStreamingTests(TestCase):
         messages = ChatMessage.objects.filter(session=self.session, role='AI')
         self.assertEqual(messages.count(), 1)
         self.assertEqual(messages.first().message, "Started...")
+
+    @patch('chat.fastapi_stream.RetrieverService.retrieve_context')
+    @patch('chat.fastapi_stream.LLMService')
+    def test_streaming_debug_mode(self, mock_llm_service_class, mock_retrieve_context):
+        mock_retrieve_context.return_value = (
+            [{"text": "Context chunk", "relevance_score": 0.8, "chunk_id": "c2", "document_name": "doc1.pdf"}],
+            384
+        )
+        
+        mock_llm_service = mock_llm_service_class.return_value
+        
+        async def mock_stream(*args, **kwargs):
+            yield {"token": "Debug "}
+            yield {"token": "Output."}
+            yield {"citations": []}
+            yield {"debug_info": {
+                "prompt_sent": "Test prompt",
+                "token_count": {"total_tokens": 10}
+            }}
+            
+        mock_llm_service.stream_generate_answer = mock_stream
+        
+        response = self.client.post("/stream/", json={
+            "query": "Hello debug",
+            "session_id": self.session.id,
+            "debug": True
+        }, headers=self.headers)
+        
+        self.assertEqual(response.status_code, 200)
+        lines = response.text.split("\n\n")
+        
+        debug_found = False
+        for line in lines:
+            if '"debug":' in line and 'generated_embedding_dimension' in line:
+                debug_found = True
+                data = json.loads(line.replace('data: ', ''))
+                self.assertEqual(data["debug"]["generated_embedding_dimension"], 384)
+                self.assertEqual(data["debug"]["original_user_question"], "Hello debug")
+        
+        self.assertTrue(debug_found)

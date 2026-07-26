@@ -87,17 +87,20 @@ class EmbeddingService:
             logger.error(f"Failed to embed and store chunks: {e}", exc_info=True)
             return False
 
-    def retrieve_similar_chunks(self, query, top_k=5, document_ids=None):
+    def retrieve_similar_chunks(self, query, top_k=5, document_ids=None, is_debug=False):
         """
         Retrieves the most similar chunks for a given query.
         Optionally filter by a list of document_ids.
         """
         if not self.collection:
             logger.error("ChromaDB collection is not initialized. Cannot retrieve chunks.")
+            if is_debug:
+                return [], 0
             return []
 
         try:
             query_embedding = self.embedding_model.embed_query(query)
+            embedding_dim = len(query_embedding)
             
             # Prepare where clause for filtering by document_ids
             where_clause = None
@@ -131,7 +134,11 @@ class EmbeddingService:
                         "chunk_id": metadata.get("chunk_id", -1)
                     })
                     
+            if is_debug:
+                return formatted_results, embedding_dim
             return formatted_results
         except Exception as e:
             logger.error(f"Error retrieving similar chunks: {e}", exc_info=True)
+            if is_debug:
+                return [], 0
             return []

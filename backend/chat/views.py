@@ -31,7 +31,17 @@ class QueryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
+        import time
+        from django.conf import settings
+        
         query = request.data.get("query")
+        session_id = request.data.get("session_id")
+        collection_id = request.data.get("collection_id")
+        document_ids = request.data.get("document_ids", None)
+        debug = request.data.get("debug", False)
+        
+        is_debug = str(debug).lower() == "true" and getattr(settings, 'ENABLE_DEBUG_MODE', True)
+        total_start = time.time()
         session_id = request.data.get("session_id")
         collection_id = request.data.get("collection_id")
         document_ids = request.data.get("document_ids", None)
@@ -79,14 +89,46 @@ class QueryView(APIView):
             return Response(response_data, status=status.HTTP_200_OK)
 
         # 1. Retrieve Context securely bounded to user_document_ids
-        context_chunks = RetrieverService.retrieve_context(query, document_ids=user_document_ids, top_k=5)
+        retrieval_start = time.time()
+        embedding_dim = 0
+        if is_debug:
+            context_chunks, embedding_dim = RetrieverService.retrieve_context(query, document_ids=user_document_ids, top_k=5, is_debug=True)
+        else:
+            context_chunks = RetrieverService.retrieve_context(query, document_ids=user_document_ids, top_k=5)
+        retrieval_latency = time.time() - retrieval_start
         
         # 2. Call LLM
+        llm_start = time.time()
         llm_service = LLMService()
-        response_data = llm_service.generate_answer(query, context_chunks, chat_history)
+        response_data = llm_service.generate_answer(query, context_chunks, chat_history, is_debug=is_debug)
+        llm_latency = time.time() - llm_start
+        
+        total_latency = time.time() - total_start
         
         # Save AI response to db
         if session:
             ChatMessage.objects.create(session=session, role='AI', message=response_data.get("answer", ""))
+            
+        if is_debug:
+            debug_info = response_data.pop("debug_info", {})
+            debug_data = {
+                "original_user_question": query,
+                "generated_embedding_dimension": embedding_dim,
+                "retrieval_query": query,
+                "retrieved_chunks": [c.get("text") for c in context_chunks],
+                "similarity_scores": [c.get("relevance_score") for c in context_chunks],
+                "chunk_ids": [c.get("chunk_id") for c in context_chunks],
+                "document_names": [c.get("document_name") for c in context_chunks],
+                "prompt_sent": debug_info.get("prompt_sent", ""),
+                "token_count": debug_info.get("token_count", {}),
+                "response_generation_time": f"{llm_latency:.4f}s",
+                "retrieval_latency": f"{retrieval_latency:.4f}s",
+                "total_latency": f"{total_latency:.4f}s"
+            }
+            response_data["debug"] = debug_data
+            
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"DEBUG MODE - Query: {query}, Latency: {total_latency:.4f}s")
         
         return Response(response_data, status=status.HTTP_200_OK)

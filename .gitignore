@@ -16,6 +16,9 @@ pip-delete-this-directory.txt
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+backend/media/
+backend/test.db
+
 
 # Node
 node_modules/

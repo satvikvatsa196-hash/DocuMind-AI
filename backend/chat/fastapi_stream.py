@@ -24,6 +24,7 @@ class StreamRequest(BaseModel):
     session_id: Optional[int] = None
     collection_id: Optional[int] = None
     document_ids: Optional[List[int]] = None
+    debug: Optional[bool] = False
 
 async def get_current_user(authorization: str = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
@@ -41,10 +42,16 @@ async def get_current_user(authorization: str = Header(None)):
 
 @app.post("/stream/")
 async def stream_chat(request: StreamRequest, user=Depends(get_current_user)):
+    import time
+    
     query = request.query
     session_id = request.session_id
     collection_id = request.collection_id
     document_ids = request.document_ids
+    debug = request.debug
+    
+    is_debug = debug and getattr(settings, 'ENABLE_DEBUG_MODE', True)
+    total_start = time.time()
 
     if not query:
         raise HTTPException(status_code=400, detail="Query is required.")
@@ -100,21 +107,51 @@ async def stream_chat(request: StreamRequest, user=Depends(get_current_user)):
         return StreamingResponse(no_docs_response(), media_type="text/event-stream")
 
     # Retrieve context
-    context_chunks = await sync_to_async(RetrieverService.retrieve_context)(
-        query, document_ids=user_document_ids, top_k=5
-    )
+    retrieval_start = time.time()
+    embedding_dim = 0
+    if is_debug:
+        context_chunks, embedding_dim = await sync_to_async(RetrieverService.retrieve_context)(
+            query, document_ids=user_document_ids, top_k=5, is_debug=True
+        )
+    else:
+        context_chunks = await sync_to_async(RetrieverService.retrieve_context)(
+            query, document_ids=user_document_ids, top_k=5
+        )
+    retrieval_latency = time.time() - retrieval_start
 
     llm_service = LLMService()
 
     async def generate():
         full_answer = ""
+        llm_start = time.time()
         try:
-            async for chunk_data in llm_service.stream_generate_answer(query, context_chunks, chat_history):
+            async for chunk_data in llm_service.stream_generate_answer(query, context_chunks, chat_history, is_debug=is_debug):
                 if chunk_data.get("token"):
                     full_answer += chunk_data["token"]
                     yield "data: " + json.dumps({"token": chunk_data["token"]}) + "\n\n"
                 elif chunk_data.get("citations"):
                     yield "data: " + json.dumps({"citations": chunk_data["citations"]}) + "\n\n"
+                elif chunk_data.get("debug_info"):
+                    llm_latency = time.time() - llm_start
+                    total_latency = time.time() - total_start
+                    debug_info = chunk_data["debug_info"]
+                    debug_data = {
+                        "original_user_question": query,
+                        "generated_embedding_dimension": embedding_dim,
+                        "retrieval_query": query,
+                        "retrieved_chunks": [c.get("text") for c in context_chunks],
+                        "similarity_scores": [c.get("relevance_score") for c in context_chunks],
+                        "chunk_ids": [c.get("chunk_id") for c in context_chunks],
+                        "document_names": [c.get("document_name") for c in context_chunks],
+                        "prompt_sent": debug_info.get("prompt_sent", ""),
+                        "token_count": debug_info.get("token_count", {}),
+                        "response_generation_time": f"{llm_latency:.4f}s",
+                        "retrieval_latency": f"{retrieval_latency:.4f}s",
+                        "total_latency": f"{total_latency:.4f}s"
+                    }
+                    yield "data: " + json.dumps({"debug": debug_data}) + "\n\n"
+                    
+                    logger.info(f"DEBUG MODE - Query: {query}, Latency: {total_latency:.4f}s, Stream: True")
             
             # After streaming is complete, save the full response
             if session:

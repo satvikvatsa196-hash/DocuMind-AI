@@ -63,6 +63,7 @@ graph TD
 - **Real-Time AI Streaming**: Experience token-by-token ChatGPT-like responses powered by Server-Sent Events (SSE) and FastAPI.
 - **RAG Generation**: Asks intelligent questions and receives AI-generated answers grounded *strictly* in your documents.
 - **Precise Citations & Highlights**: Every AI response includes direct citations tracking the document source, page number, AI relevance score, and the exact highlighted passage used to generate the answer. Clicking a citation instantly navigates the user to the precise location.
+- **Retrieval Debug Mode**: Developers can append `debug=true` to query payloads to introspect the full RAG pipeline. It exposes the exact LLM prompt, token usage, embedding dimensions, latencies, and similarity scores without altering the generated answer. It can be safely toggled globally in production via the `ENABLE_DEBUG_MODE` environment variable.
 - **Document Collections**: Organize your workspaces (e.g., "Machine Learning Notes").
 - **Strict Tenant Isolation**: Robust Django ORM restrictions ensure users can *never* query or access documents owned by other users.
 - **Conversational Memory**: Chat sessions remember the last 5 turns of history for seamless conversation flow.
@@ -166,6 +167,43 @@ Once running, visit `http://localhost:8000/api/docs/` to interactively test endp
       "relevance_score": 0.94
     }
   ]
+}
+```
+
+### Example RAG Request with Debug Mode
+```json
+{
+  "query": "What are the core concepts of Machine Learning?",
+  "collection_id": 2,
+  "debug": true
+}
+```
+
+### Example Debug Output Payload
+When `debug=true` is provided (and enabled globally), the API response includes a rich `debug` object alongside the standard answer and citations:
+```json
+{
+  "answer": "Machine Learning core concepts include Supervised Learning...",
+  "citations": [...],
+  "retrieved_passages": [...],
+  "debug": {
+    "original_user_question": "What are the core concepts of Machine Learning?",
+    "generated_embedding_dimension": 384,
+    "retrieval_query": "What are the core concepts of Machine Learning?",
+    "retrieved_chunks": ["Machine Learning core concepts include Supervised Learning..."],
+    "similarity_scores": [0.94],
+    "chunk_ids": ["doc_1_chunk_4_abc123"],
+    "document_names": ["ML_Notes.pdf"],
+    "prompt_sent": "SYSTEM:\nYou are a helpful AI document assistant...\n\nUSER:\nContext:\n--- Context Chunk 1... ---",
+    "token_count": {
+      "input_tokens": 125,
+      "output_tokens": 18,
+      "total_tokens": 143
+    },
+    "response_generation_time": "1.2345s",
+    "retrieval_latency": "0.1234s",
+    "total_latency": "1.3579s"
+  }
 }
 ```
 

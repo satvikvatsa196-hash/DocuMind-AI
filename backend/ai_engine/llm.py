@@ -12,7 +12,7 @@ class LLMService:
         api_key = os.environ.get("OPENAI_API_KEY", "dummy_key")
         self.llm = ChatOpenAI(temperature=0.0, openai_api_key=api_key, model_name="gpt-3.5-turbo")
 
-    def generate_answer(self, question, context_chunks, chat_history=None):
+    def generate_answer(self, question, context_chunks, chat_history=None, is_debug=False):
         if chat_history is None:
             chat_history = []
             
@@ -67,6 +67,34 @@ Ensure your response is valid JSON. Do not include markdown code block formattin
             response = self.llm.invoke(messages)
             content = response.content.strip()
             
+            debug_info = None
+            if is_debug:
+                prompt_sent = ""
+                for msg in messages:
+                    prompt_sent += f"{msg.type.upper()}:\n{msg.content}\n\n"
+                
+                input_tokens = 0
+                output_tokens = 0
+                total_tokens = 0
+                if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                    input_tokens = response.usage_metadata.get('input_tokens', 0)
+                    output_tokens = response.usage_metadata.get('output_tokens', 0)
+                    total_tokens = response.usage_metadata.get('total_tokens', 0)
+                else:
+                    # simple fallback estimation
+                    input_tokens = len(prompt_sent) // 4
+                    output_tokens = len(content) // 4
+                    total_tokens = input_tokens + output_tokens
+                
+                debug_info = {
+                    "prompt_sent": prompt_sent,
+                    "token_count": {
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "total_tokens": total_tokens
+                    }
+                }
+            
             # Clean up potential markdown formatting from LLMs
             if content.startswith("```json"):
                 content = content[7:]
@@ -99,11 +127,14 @@ Ensure your response is valid JSON. Do not include markdown code block formattin
             # Sort retrieved passages by relevance score descending
             retrieved_passages.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
             
-            return {
+            result = {
                 "answer": parsed_response.get("answer", ""),
                 "citations": unique_citations,
                 "retrieved_passages": retrieved_passages
             }
+            if debug_info:
+                result["debug_info"] = debug_info
+            return result
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON from LLM: {response.content}")
             return {
@@ -119,7 +150,7 @@ Ensure your response is valid JSON. Do not include markdown code block formattin
                 "retrieved_passages": []
             }
 
-    async def stream_generate_answer(self, question, context_chunks, chat_history=None):
+    async def stream_generate_answer(self, question, context_chunks, chat_history=None, is_debug=False):
         if chat_history is None:
             chat_history = []
             
@@ -161,9 +192,30 @@ Provide your answer as plain text without any markdown or JSON formatting.
         messages.append(HumanMessage(content=f"Context:\n{context_text}\n\nQuestion: {question}"))
 
         try:
+            prompt_sent = ""
+            if is_debug:
+                for msg in messages:
+                    prompt_sent += f"{msg.type.upper()}:\n{msg.content}\n\n"
+                    
+            input_tokens = 0
+            output_tokens = 0
+            
             async for chunk in self.llm.astream(messages):
                 if chunk.content:
+                    if is_debug:
+                        output_tokens += len(chunk.content) // 4
                     yield {"token": chunk.content}
+                    
+            if is_debug:
+                input_tokens = len(prompt_sent) // 4
+                yield {"debug_info": {
+                    "prompt_sent": prompt_sent,
+                    "token_count": {
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "total_tokens": input_tokens + output_tokens
+                    }
+                }}
                     
             # After finishing the text, yield the citations
             yield {"citations": citations}
