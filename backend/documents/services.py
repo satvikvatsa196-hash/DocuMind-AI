@@ -38,7 +38,7 @@ class DocumentService:
             file_name=file.name,
             file_type=ext,
             file_path=file,
-            processing_status='PENDING'
+            processing_status='UPLOADING'
         )
         document.save()
 

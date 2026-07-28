@@ -65,6 +65,7 @@ graph TD
 - **Precise Citations & Highlights**: Every AI response includes direct citations tracking the document source, page number, AI relevance score, and the exact highlighted passage used to generate the answer. Clicking a citation instantly navigates the user to the precise location.
 - **Retrieval Debug Mode**: Developers can append `debug=true` to query payloads to introspect the full RAG pipeline. It exposes the exact LLM prompt, token usage, embedding dimensions, latencies, and similarity scores without altering the generated answer. It can be safely toggled globally in production via the `ENABLE_DEBUG_MODE` environment variable.
 - **Document Collections**: Organize your workspaces (e.g., "Machine Learning Notes").
+- **Document Processing Dashboard**: Comprehensive REST APIs built with FastAPI to monitor and manage document ingestion. Features include real-time status tracking (Uploading, Chunking, Embedding, etc.), pagination, status filtering, and retry mechanisms for failed processing jobs.
 - **Strict Tenant Isolation**: Robust Django ORM restrictions ensure users can *never* query or access documents owned by other users.
 - **Conversational Memory**: Chat sessions remember the last 5 turns of history for seamless conversation flow.
 - **Secure Authentication**: Protected via JWT Access/Refresh tokens.
@@ -135,6 +136,10 @@ Once running, visit `http://localhost:8000/api/docs/` to interactively test endp
 
 - `POST /api/users/login/` - Obtain JWT tokens
 - `POST /api/documents/upload/` - Upload PDF/DOCX
+- `GET /api/dashboard/documents/` - List paginated documents with optional status filtering
+- `GET /api/dashboard/documents/{doc_id}` - Retrieve detailed document processing metadata
+- `POST /api/dashboard/documents/{doc_id}/retry` - Retry failed or completed document processing
+- `DELETE /api/dashboard/documents/{doc_id}` - Delete a document
 - `POST /api/chat/query/` - Execute a RAG query (Standard)
 - `POST /api/chat/fastapi/stream/` - Execute a RAG query using Server-Sent Events (SSE) for token-by-token streaming
 

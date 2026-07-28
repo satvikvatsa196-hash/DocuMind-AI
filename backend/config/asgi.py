@@ -16,6 +16,7 @@ django_asgi_app = get_asgi_application()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from chat.fastapi_stream import app as fastapi_app
+from documents.fastapi_dashboard import router as documents_router
 
 application = FastAPI(title="DocuMind AI Application")
 
@@ -30,6 +31,9 @@ application.add_middleware(
 
 # Mount FastAPI stream app at /api/chat/fastapi
 application.mount("/api/chat/fastapi", fastapi_app)
+
+# Include the documents router on the main FastAPI application
+application.include_router(documents_router, prefix="/api")
 
 # Mount Django app for everything else
 application.mount("/", django_asgi_app)

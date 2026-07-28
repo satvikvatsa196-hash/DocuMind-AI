@@ -25,7 +25,7 @@ class DocumentUploadTests(TestCase):
         doc = Document.objects.first()
         self.assertEqual(doc.file_name, "test.txt")
         self.assertEqual(doc.file_type, "txt")
-        self.assertEqual(doc.processing_status, "PENDING")
+        self.assertEqual(doc.processing_status, "UPLOADING")
         self.assertEqual(doc.uploaded_by, self.user)
 
     def test_upload_unsupported_file(self):
@@ -78,7 +78,7 @@ class DocumentProcessingTests(TestCase):
             file_name="test.txt",
             file_type="txt",
             file_path=file,
-            processing_status="PENDING"
+            processing_status="UPLOADING"
         )
         
         DocumentProcessingService.process_document(document.id)
@@ -96,7 +96,7 @@ class DocumentProcessingTests(TestCase):
             file_name="test.pdf",
             file_type="pdf",
             file_path=file,
-            processing_status="PENDING"
+            processing_status="UPLOADING"
         )
         
         DocumentProcessingService.process_document(document.id)
@@ -114,7 +114,7 @@ class DocumentProcessingTests(TestCase):
             file_name="test.docx",
             file_type="docx",
             file_path=file,
-            processing_status="PENDING"
+            processing_status="UPLOADING"
         )
         
         DocumentProcessingService.process_document(document.id)
@@ -132,7 +132,7 @@ class DocumentProcessingTests(TestCase):
             file_name="test.txt",
             file_type="txt",
             file_path=file,
-            processing_status="PENDING"
+            processing_status="UPLOADING"
         )
         
         DocumentProcessingService.process_document(document.id)
