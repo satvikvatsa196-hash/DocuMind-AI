@@ -34,6 +34,7 @@ class Document(models.Model):
     processing_duration = models.FloatField(null=True, blank=True, help_text="Duration in seconds")
     embedding_model = models.CharField(max_length=100, default='text-embedding-ada-002', null=True, blank=True)
     vector_database_status = models.CharField(max_length=50, default='PENDING', null=True, blank=True)
+    task_id = models.CharField(max_length=255, null=True, blank=True)
 
     def __str__(self):
         return self.file_name

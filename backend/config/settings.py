@@ -164,3 +164,11 @@ CHROMA_DB_COLLECTION = os.environ.get("CHROMA_DB_COLLECTION", "documind_collecti
 # Debug Mode Configuration
 ENABLE_DEBUG_MODE = os.environ.get("ENABLE_DEBUG_MODE", "True").lower() == "true"
 
+# Celery Configuration
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+

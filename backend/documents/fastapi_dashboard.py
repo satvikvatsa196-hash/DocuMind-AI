@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File, Form
+from fastapi.responses import JSONResponse
+import os
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
@@ -22,6 +24,7 @@ class DocumentDTO(BaseModel):
     processing_duration: Optional[float] = 0.0
     embedding_model: Optional[str] = "text-embedding-ada-002"
     vector_database_status: Optional[str] = "PENDING"
+    task_id: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -95,15 +98,113 @@ async def retry_processing(doc_id: int, user=Depends(get_current_user)):
         doc.embedding_status = 'PENDING'
         doc.vector_database_status = 'PENDING'
         doc.processing_duration = 0.0
-        await sync_to_async(doc.save)()
         
-        # Start background processing
-        from documents.processing import DocumentProcessingService
-        import threading
-        thread = threading.Thread(target=DocumentProcessingService.process_document, args=(doc.id,))
-        thread.daemon = True
-        thread.start()
+        from documents.tasks import process_document_task
+        task = process_document_task.delay(doc.id)
+        doc.task_id = task.id
+        
+        await sync_to_async(doc.save)()
         
         return DocumentDTO.model_validate(doc)
     except Document.DoesNotExist:
         raise HTTPException(status_code=404, detail="Document not found")
+
+@router.post("/upload", response_model=DocumentDTO, status_code=status.HTTP_201_CREATED)
+async def upload_document(
+    file: UploadFile = File(...),
+    collection_id: Optional[int] = Form(None),
+    user=Depends(get_current_user)
+):
+    from documents.services import DocumentService
+    
+    # Save the file temporarily to pass to Django's FileField
+    temp_dir = os.path.join(os.environ.get('TEMP', '/tmp'), 'documind_uploads')
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_file_path = os.path.join(temp_dir, file.filename)
+    
+    with open(temp_file_path, "wb") as buffer:
+        buffer.write(await file.read())
+        
+    try:
+        from django.core.files import File as DjangoFile
+        
+        with open(temp_file_path, "rb") as f:
+            django_file = DjangoFile(f, name=file.filename)
+            
+            # Using sync_to_async for DB operations
+            def create_doc():
+                from documents.models import DocumentCollection
+                collection = None
+                if collection_id:
+                    collection = DocumentCollection.objects.filter(id=collection_id, owner=user).first()
+                    if not collection:
+                        raise ValueError("Collection not found or permission denied.")
+                
+                DocumentService.validate_file(django_file)
+                ext = os.path.splitext(django_file.name)[1].lower().replace('.', '')
+                
+                doc = Document(
+                    uploaded_by=user,
+                    collection=collection,
+                    file_name=django_file.name,
+                    file_type=ext,
+                    file_path=django_file,
+                    processing_status='UPLOADING'
+                )
+                doc.save()
+                return doc
+                
+            doc = await sync_to_async(create_doc)()
+            
+            from documents.tasks import process_document_task
+            task = process_document_task.delay(doc.id)
+            
+            doc.task_id = task.id
+            await sync_to_async(doc.save)(update_fields=['task_id'])
+            
+            return DocumentDTO.model_validate(doc)
+            
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+
+
+@router.get("/task/{task_id}/status")
+async def get_task_status(task_id: str, user=Depends(get_current_user)):
+    from celery.result import AsyncResult
+    from config.celery import app as celery_app
+    
+    task_result = AsyncResult(task_id, app=celery_app)
+    
+    response = {
+        "task_id": task_id,
+        "status": task_result.status,
+    }
+    
+    if task_result.state == 'FAILURE':
+        response["error"] = str(task_result.result)
+        
+    return JSONResponse(content=response)
+
+@router.post("/task/{task_id}/cancel")
+async def cancel_task(task_id: str, user=Depends(get_current_user)):
+    from config.celery import app as celery_app
+    
+    # Send revoke signal
+    celery_app.control.revoke(task_id, terminate=True)
+    
+    # We should also try to mark the document as FAILED/CANCELLED if we can find it
+    async def mark_cancelled():
+        try:
+            doc = await Document.objects.aget(task_id=task_id, uploaded_by=user)
+            if doc.processing_status not in ['COMPLETED', 'FAILED']:
+                doc.processing_status = 'FAILED'
+                await sync_to_async(doc.save)(update_fields=['processing_status'])
+        except Document.DoesNotExist:
+            pass
+            
+    await mark_cancelled()
+    
+    return JSONResponse(content={"task_id": task_id, "status": "CANCELLED"})

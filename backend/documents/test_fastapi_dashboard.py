@@ -81,7 +81,11 @@ class DocumentDashboardTests(TestCase):
             Document.objects.get(id=self.doc1.id)
 
     def test_retry_processing_failed(self):
-        with patch('threading.Thread.start') as mock_thread:
+        with patch('documents.tasks.process_document_task.delay') as mock_task:
+            class MockTask:
+                id = "mock_task_id"
+            mock_task.return_value = MockTask()
+            
             response = self.client.post(f"/api/dashboard/documents/{self.doc3.id}/retry", headers=self.headers)
             self.assertEqual(response.status_code, 200)
             
@@ -90,7 +94,8 @@ class DocumentDashboardTests(TestCase):
             
             self.doc3.refresh_from_db()
             self.assertEqual(self.doc3.processing_status, "UPLOADING")
-            mock_thread.assert_called_once()
+            self.assertEqual(self.doc3.task_id, "mock_task_id")
+            mock_task.assert_called_once_with(self.doc3.id)
 
     def test_retry_processing_uploading(self):
         # Cannot retry if already uploading
