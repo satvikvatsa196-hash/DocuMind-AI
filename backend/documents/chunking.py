@@ -27,30 +27,66 @@ class ChunkingService:
             separators=["\n\n", "\n", " ", ""]
         )
 
+        import re
+
         # Clear existing chunks if re-chunking
         DocumentChunk.objects.filter(document=document).delete()
 
-        chunks = text_splitter.split_text(document.extracted_text)
-        
         document_chunks = []
-        for i, chunk_text in enumerate(chunks, start=1):
-            metadata = {
-                "source": document.file_name,
-                "document_id": document.id,
-                "file_type": document.file_type,
-            }
-            if document.collection:
-                metadata["collection_id"] = document.collection.id
+        chunk_number = 1
 
-            document_chunks.append(
-                DocumentChunk(
-                    document=document,
-                    chunk_text=chunk_text,
-                    chunk_number=i,
-                    page_number=None, # Page numbers require parsing modifications to extract page by page
-                    metadata=metadata
+        # Check for page markers added during PDF extraction
+        pages = re.split(r'--- PAGE (\d+) ---', document.extracted_text)
+        
+        if len(pages) > 1:
+            for i in range(1, len(pages), 2):
+                page_num_str = pages[i]
+                page_text = pages[i+1].strip()
+                if not page_text:
+                    continue
+                    
+                page_chunks = text_splitter.split_text(page_text)
+                for chunk_text in page_chunks:
+                    metadata = {
+                        "source": document.file_name,
+                        "document_id": document.id,
+                        "file_type": document.file_type,
+                        "page": int(page_num_str)
+                    }
+                    if document.collection:
+                        metadata["collection_id"] = document.collection.id
+
+                    document_chunks.append(
+                        DocumentChunk(
+                            document=document,
+                            chunk_text=chunk_text,
+                            chunk_number=chunk_number,
+                            page_number=int(page_num_str),
+                            metadata=metadata
+                        )
+                    )
+                    chunk_number += 1
+        else:
+            chunks = text_splitter.split_text(document.extracted_text)
+            for chunk_text in chunks:
+                metadata = {
+                    "source": document.file_name,
+                    "document_id": document.id,
+                    "file_type": document.file_type,
+                }
+                if document.collection:
+                    metadata["collection_id"] = document.collection.id
+
+                document_chunks.append(
+                    DocumentChunk(
+                        document=document,
+                        chunk_text=chunk_text,
+                        chunk_number=chunk_number,
+                        page_number=None,
+                        metadata=metadata
+                    )
                 )
-            )
+                chunk_number += 1
 
         # Bulk create chunks for efficiency
         created_chunks = DocumentChunk.objects.bulk_create(document_chunks)

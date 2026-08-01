@@ -25,6 +25,9 @@ class DocumentDTO(BaseModel):
     embedding_model: Optional[str] = "text-embedding-ada-002"
     vector_database_status: Optional[str] = "PENDING"
     task_id: Optional[str] = None
+    has_ocr_text: Optional[bool] = False
+    ocr_confidence: Optional[float] = None
+    ocr_processing_time: Optional[float] = None
 
     class Config:
         from_attributes = True

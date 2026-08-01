@@ -35,6 +35,11 @@ class Document(models.Model):
     embedding_model = models.CharField(max_length=100, default='text-embedding-ada-002', null=True, blank=True)
     vector_database_status = models.CharField(max_length=50, default='PENDING', null=True, blank=True)
     task_id = models.CharField(max_length=255, null=True, blank=True)
+    
+    # OCR Fields
+    has_ocr_text = models.BooleanField(default=False)
+    ocr_confidence = models.FloatField(null=True, blank=True)
+    ocr_processing_time = models.FloatField(null=True, blank=True, help_text="OCR Duration in seconds")
 
     def __str__(self):
         return self.file_name

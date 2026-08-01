@@ -27,7 +27,10 @@ class DocumentProcessingService:
         try:
             # File extraction logic based on extension
             if document.file_type == 'pdf':
-                extracted_text = DocumentProcessingService._extract_pdf(document.file_path.path)
+                extracted_text, ocr_stats = DocumentProcessingService._extract_pdf(document.file_path.path)
+                document.has_ocr_text = ocr_stats.get('has_ocr', False)
+                document.ocr_confidence = ocr_stats.get('confidence')
+                document.ocr_processing_time = ocr_stats.get('processing_time')
             elif document.file_type == 'docx':
                 extracted_text = DocumentProcessingService._extract_docx(document.file_path.path)
             elif document.file_type == 'txt':
@@ -38,7 +41,12 @@ class DocumentProcessingService:
             # Save the extracted text
             document.extracted_text = extracted_text
             document.processing_status = 'COMPLETED'
-            document.save(update_fields=['extracted_text', 'processing_status'])
+            
+            update_fields = ['extracted_text', 'processing_status']
+            if document.file_type == 'pdf':
+                update_fields.extend(['has_ocr_text', 'ocr_confidence', 'ocr_processing_time'])
+                
+            document.save(update_fields=update_fields)
             logger.info(f"Successfully processed document {document.id}")
 
             # Trigger chunking
@@ -51,15 +59,81 @@ class DocumentProcessingService:
 
     @staticmethod
     def _extract_pdf(file_path):
+        from django.conf import settings
+        import time
+        import numpy as np
+        
+        enable_ocr = getattr(settings, 'ENABLE_OCR', True)
+        
         text = ""
+        ocr_confidence_sum = 0
+        ocr_page_count = 0
+        has_ocr = False
+        start_time = time.time()
+        
+        paddle_ocr = None
+        
         try:
             with fitz.open(file_path) as doc:
-                for page in doc:
-                    text += page.get_text() + "\n"
+                for page_num, page in enumerate(doc, start=1):
+                    page_text = page.get_text().strip()
+                    
+                    if not page_text and enable_ocr:
+                        try:
+                            if paddle_ocr is None:
+                                from paddleocr import PaddleOCR
+                                paddle_ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
+                                
+                            pix = page.get_pixmap(dpi=150)
+                            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
+                            
+                            if pix.n == 4:
+                                import cv2
+                                img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
+                            elif pix.n == 1:
+                                import cv2
+                                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+                            elif pix.n == 3:
+                                import cv2
+                                img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+                                
+                            result = paddle_ocr.ocr(img, cls=True)
+                            
+                            page_ocr_text = ""
+                            page_conf_sum = 0
+                            word_count = 0
+                            
+                            if result and result[0]:
+                                for line in result[0]:
+                                    if line:
+                                        page_ocr_text += line[1][0] + " "
+                                        page_conf_sum += line[1][1]
+                                        word_count += 1
+                                        
+                            if word_count > 0:
+                                page_text = page_ocr_text.strip()
+                                ocr_confidence_sum += (page_conf_sum / word_count)
+                                ocr_page_count += 1
+                                has_ocr = True
+                                
+                        except Exception as ocr_e:
+                            logger.error(f"OCR failed on page {page_num} of {file_path}: {str(ocr_e)}")
+                            
+                    # Add marker for ChunkingService to preserve page numbers
+                    if page_text:
+                        text += f"--- PAGE {page_num} ---\n{page_text}\n\n"
+                        
         except Exception as e:
             logger.error(f"Error extracting PDF from {file_path}: {str(e)}")
             raise
-        return text.strip()
+            
+        ocr_stats = {
+            'has_ocr': has_ocr,
+            'confidence': ocr_confidence_sum / ocr_page_count if ocr_page_count > 0 else None,
+            'processing_time': time.time() - start_time if has_ocr else 0.0
+        }
+        
+        return text.strip(), ocr_stats
 
     @staticmethod
     def _extract_docx(file_path):

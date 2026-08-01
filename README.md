@@ -59,6 +59,7 @@ graph TD
 ## ✨ Core Features
 
 - **Multi-Format Processing**: Effortlessly ingest `.pdf`, `.docx`, and `.txt` documents.
+- **Automatic OCR Integration**: Detects missing or insufficient text in scanned PDFs and seamlessly falls back to PaddleOCR to extract text while preserving original page numbers.
 - **Semantic Vector Search**: Automatically generates `all-MiniLM-L6-v2` embeddings for semantic similarity retrieval.
 - **Real-Time AI Streaming**: Experience token-by-token ChatGPT-like responses powered by Server-Sent Events (SSE) and FastAPI.
 - **RAG Generation**: Asks intelligent questions and receives AI-generated answers grounded *strictly* in your documents.
@@ -87,6 +88,7 @@ graph TD
 - **FastAPI & Uvicorn (ASGI)** for asynchronous SSE streaming
 - **Celery & Redis** for robust, distributed asynchronous task queues
 - **PyMuPDF** & **python-docx** for rapid document extraction
+- **PaddleOCR** & **OpenCV** for automatic optical character recognition on scanned PDFs
 
 ### Artificial Intelligence & Database
 - **LangChain** (RAG Orchestration, Text Splitting)
@@ -117,6 +119,7 @@ The easiest way to run DocuMind AI locally is via Docker Compose.
    Create a `.env` file in the root directory:
    ```env
    OPENAI_API_KEY=sk-your-openai-key-here
+   ENABLE_OCR=true # Set to false to disable automatic OCR for scanned PDFs
    ```
 
 3. **Spin up the stack**:
@@ -139,7 +142,7 @@ Once running, visit `http://localhost:8000/api/docs/` to interactively test endp
 - `POST /api/users/login/` - Obtain JWT tokens
 - `POST /api/dashboard/documents/upload` - Upload PDF/DOCX and immediately return `task_id` for background processing
 - `GET /api/dashboard/documents/` - List paginated documents with optional status filtering
-- `GET /api/dashboard/documents/{doc_id}` - Retrieve detailed document processing metadata
+- `GET /api/dashboard/documents/{doc_id}` - Retrieve detailed document processing metadata, including chunk counts, extraction status, and detailed OCR statistics (`has_ocr_text`, `ocr_confidence`, `ocr_processing_time`)
 - `POST /api/dashboard/documents/{doc_id}/retry` - Retry failed or completed document processing via Celery
 - `DELETE /api/dashboard/documents/{doc_id}` - Delete a document
 - `GET /api/dashboard/documents/task/{task_id}/status` - Check the live status of an asynchronous processing task

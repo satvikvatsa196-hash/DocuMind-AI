@@ -89,7 +89,7 @@ class DocumentProcessingTests(TestCase):
 
     @patch('documents.processing.DocumentProcessingService._extract_pdf')
     def test_process_pdf_document(self, mock_extract_pdf):
-        mock_extract_pdf.return_value = "Mocked PDF content"
+        mock_extract_pdf.return_value = ("Mocked PDF content", {'has_ocr': False, 'confidence': None, 'processing_time': 0})
         file = SimpleUploadedFile("test.pdf", b"dummy pdf", content_type="application/pdf")
         document = Document.objects.create(
             uploaded_by=self.user,

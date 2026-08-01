@@ -13,5 +13,5 @@ class DocumentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Document
-        fields = ('id', 'collection', 'collection_id', 'file_name', 'file_type', 'file_path', 'uploaded_at', 'processing_status', 'file')
-        read_only_fields = ('id', 'collection', 'file_name', 'file_type', 'file_path', 'uploaded_at', 'processing_status')
+        fields = ('id', 'collection', 'collection_id', 'file_name', 'file_type', 'file_path', 'uploaded_at', 'processing_status', 'file', 'has_ocr_text', 'ocr_confidence', 'ocr_processing_time')
+        read_only_fields = ('id', 'collection', 'file_name', 'file_type', 'file_path', 'uploaded_at', 'processing_status', 'has_ocr_text', 'ocr_confidence', 'ocr_processing_time')
